@@ -1,7 +1,7 @@
 # nse-deals
 
 [![tests](https://github.com/vasimmistry-dev/nse-deals/actions/workflows/tests.yml/badge.svg)](https://github.com/vasimmistry-dev/nse-deals/actions/workflows/tests.yml)
-![python](https://img.shields.io/badge/python-3.9%E2%80%933.12-blue)
+![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A small Python library, command-line tool and embeddable HTML viewer for **NSE India bulk deals, block deals and short-selling data**.
@@ -144,7 +144,7 @@ pip install -e ".[test]"
 pytest
 ```
 
-Tests never touch the network. They use a fake HTTP session and the files in `tests/fixtures/`. **The fixture data is synthetic**: the companies, clients and trades are made up to match NSE's formats, and they are not real disclosures. CI runs on Python 3.9 to 3.12. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Tests never touch the network. They use a fake HTTP session and the files in `tests/fixtures/`. **The fixture data is synthetic**: the companies, clients and trades are made up to match NSE's formats, and they are not real disclosures. CI runs on Python 3.10 to 3.13. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project layout
 
