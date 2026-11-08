@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NSE Deals Viewer</title>
+<meta name="description" content="View NSE India bulk and block deals from a CSV or nse-deals JSON file. Runs entirely in the browser.">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #16191d; --muted: #5f6873; --border: #dde1e6;
+    --accent: #2457c5; --accent-weak: #e8eefb; --buy: #12805c; --buy-weak: #e3f4ec;
+    --sell: #c0392b; --sell-weak: #fbe9e7; --warn: #9a6400; --warn-weak: #fdf1d8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --panel: #171b21; --text: #e6e9ed; --muted: #98a2ad; --border: #2a3039;
+      --accent: #7aa2ff; --accent-weak: #1d2740; --buy: #4cc99a; --buy-weak: #13281f;
+      --sell: #ff7b6e; --sell-weak: #321a18; --warn: #f2c063; --warn-weak: #2f2613;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216; --panel: #171b21; --text: #e6e9ed; --muted: #98a2ad; --border: #2a3039;
+    --accent: #7aa2ff; --accent-weak: #1d2740; --buy: #4cc99a; --buy-weak: #13281f;
+    --sell: #ff7b6e; --sell-weak: #321a18; --warn: #f2c063; --warn-weak: #2f2613;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  h1 { font-size: 1.25rem; margin: 0; letter-spacing: -.01em; }
+  h1 small { display: block; font-size: .8rem; font-weight: 400; color: var(--muted); }
+  h2 { font-size: .95rem; margin: 0 0 10px; }
+  button, input, select { font: inherit; color: inherit; }
+  .btn { border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
+    padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .btn.primary { color: #0f1216; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #0f1216; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  .drop { display: block; border: 2px dashed var(--border); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--accent-weak); color: var(--text); }
+  .drop strong { color: var(--text); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .row input[type=url], .row input[type=search] { flex: 1 1 220px; min-width: 0; }
+  input[type=url], input[type=search], input[type=number] { border: 1px solid var(--border); background: var(--bg);
+    border-radius: 8px; padding: 7px 10px; }
+  input[type=number] { width: 110px; }
+  .status { font-size: .85rem; color: var(--muted); margin-top: 8px; min-height: 1.2em; }
+  .status.err { color: var(--sell); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stat .v { font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chips { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+  .chip { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent); font-weight: 600; }
+  .chip.buy[aria-pressed="true"] { background: var(--buy-weak); color: var(--buy); }
+  .chip.sell[aria-pressed="true"] { background: var(--sell-weak); color: var(--sell); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid2 .panel { margin-bottom: 0; min-width: 0; }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+  th { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; user-select: none; }
+  th[data-key] { cursor: pointer; }
+  th[data-key]:hover { color: var(--text); }
+  th .arrow { opacity: .8; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.client { white-space: normal; min-width: 150px; }
+  tbody tr:hover { background: var(--accent-weak); }
+  .side { font-size: .75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .side.BUY { color: var(--buy); background: var(--buy-weak); }
+  .side.SELL { color: var(--sell); background: var(--sell-weak); }
+  .pos { color: var(--buy); } .neg { color: var(--sell); }
+  .flag { font-size: .7rem; font-weight: 600; color: var(--warn); background: var(--warn-weak); padding: 1px 6px; border-radius: 6px; margin-left: 6px; cursor: help; }
+  .sym { font-weight: 600; cursor: pointer; }
+  .sym:hover { color: var(--accent); text-decoration: underline; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  footer { font-size: .78rem; color: var(--muted); margin: 18px 0 8px; }
+  footer a { color: var(--accent); }
+  .hidden { display: none !important; }
+  @media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid2 { grid-template-columns: 1fr; }
+    .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>NSE Deals Viewer <small>Bulk &amp; block deals · runs in your browser</small></h1>
+    <button class="btn" id="themeBtn" type="button" aria-label="Toggle colour theme">Theme</button>
+  </header>
+
+  <section class="panel" aria-label="Load data">
+    <label class="drop" id="drop" for="file">
+      <strong>Drop bulk.csv / block.csv here</strong> or tap to choose a file<br>
+      <span style="font-size:.85rem">NSE snapshot CSV, NSE historical JSON, or JSON from <code>nse-deals --json</code></span>
+    </label>
+    <input type="file" id="file" accept=".csv,.json,text/csv,application/json" class="hidden">
+    <div class="row">
+      <input type="url" id="url" placeholder="https://your-site.example/data/bulk.json" aria-label="JSON URL">
+      <button class="btn primary" id="fetchBtn" type="button">Fetch</button>
+      <button class="btn" id="demoBtn" type="button">Demo data</button>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </section>
+
+  <div id="results" class="hidden">
+    <div class="stats">
+      <div class="stat"><div class="k">Deals</div><div class="v" id="sCount">0</div></div>
+      <div class="stat"><div class="k">Total ₹ Cr</div><div class="v" id="sTotal">0</div></div>
+      <div class="stat"><div class="k">Buys ₹ Cr</div><div class="v pos" id="sBuy">0</div></div>
+      <div class="stat"><div class="k">Sells ₹ Cr</div><div class="v neg" id="sSell">0</div></div>
+    </div>
+
+    <section class="panel" aria-label="Filters">
+      <div class="row" style="margin-top:0">
+        <input type="search" id="q" placeholder="Search symbol, company or client" aria-label="Search">
+        <div class="chips" role="group" aria-label="Side">
+          <button class="chip" data-side="" aria-pressed="true" type="button">All</button>
+          <button class="chip buy" data-side="BUY" aria-pressed="false" type="button">Buy</button>
+          <button class="chip sell" data-side="SELL" aria-pressed="false" type="button">Sell</button>
+        </div>
+        <label style="font-size:.85rem;color:var(--muted)">Min ₹ Cr
+          <input type="number" id="minCr" min="0" step="0.5" value="0" inputmode="decimal"></label>
+        <button class="btn" id="resetBtn" type="button">Reset</button>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>Net by symbol</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>Symbol</th><th class="num">Deals</th><th class="num">Net qty</th><th class="num">Net ₹ Cr</th></tr></thead>
+          <tbody id="netBody"></tbody>
+        </table></div>
+      </section>
+      <section class="panel">
+        <h2>Top deals by value</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>Symbol</th><th>Client</th><th>Side</th><th class="num">₹ Cr</th></tr></thead>
+          <tbody id="topBody"></tbody>
+        </table></div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:14px">
+      <h2>All deals <span id="shown" style="font-weight:400;color:var(--muted)"></span></h2>
+      <div class="scroll"><table>
+        <thead><tr id="mainHead">
+          <th data-key="date">Date</th>
+          <th data-key="symbol">Symbol</th>
+          <th data-key="client_name">Client</th>
+          <th data-key="side">Side</th>
+          <th data-key="quantity" class="num">Qty</th>
+          <th data-key="price" class="num">Price</th>
+          <th data-key="value" class="num">₹ Cr</th>
+          <th data-key="kind" class="hide-sm">Type</th>
+        </tr></thead>
+        <tbody id="mainBody"></tbody>
+      </table></div>
+    </section>
+  </div>
+
+  <footer>
+    Data source: NSE India. Not affiliated with NSE. For information only, not investment advice.
+    Built with <a href="https://github.com/vasimmistry-dev/nse-deals">nse-deals</a> · powers
+    <a href="https://tickerkhoj.com">TickerKhoj</a>.
+    <span class="flag">RT</span> = the same client bought and sold this symbol on the same day (often intraday/arbitrage).
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { deals: [], side: "", q: "", minCr: 0, sortKey: "value", sortDir: -1 };
+  var MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+
+  // ---------- theme ----------
+  var root = document.documentElement;
+  function storedTheme() { try { return localStorage.getItem("nse-deals-theme"); } catch (e) { return null; } }
+  function applyTheme(t) {
+    if (t) root.setAttribute("data-theme", t); else root.removeAttribute("data-theme");
+    $("themeBtn").textContent = t === "dark" ? "Dark" : t === "light" ? "Light" : "Auto";
+  }
+  applyTheme(storedTheme());
+  $("themeBtn").addEventListener("click", function () {
+    var cur = root.getAttribute("data-theme"), next = cur === null ? "light" : cur === "light" ? "dark" : null;
+    applyTheme(next);
+    try { next ? localStorage.setItem("nse-deals-theme", next) : localStorage.removeItem("nse-deals-theme"); } catch (e) {}
+  });
+
+  // ---------- parsing (mirrors nse_deals/parse.py) ----------
+  function clean(v) {
+    if (v === null || v === undefined) return "";
+    var s = String(v).replace(/\s+/g, " ").trim();
+    return /^(-|--|na|n\/a|nil|null|none)$/i.test(s) ? "" : s;
+  }
+  function num(v) {
+    if (typeof v === "number") return v;
+    var s = clean(v).replace(/[,\s₹]/g, "");
+    var n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+  function side(v) {
+    var s = clean(v).toUpperCase();
+    if (s === "BUY" || s === "B" || s === "PURCHASE") return "BUY";
+    if (s === "SELL" || s === "S" || s === "SALE") return "SELL";
+    return "";
+  }
+  function isoDate(v) {
+    var s = clean(v), m;
+    if ((m = /^(\d{1,2})[-\s\/]([A-Za-z]{3})[A-Za-z]*[-\s\/](\d{4})$/.exec(s)) && MONTHS[m[2].toUpperCase()])
+      return m[3] + "-" + pad(MONTHS[m[2].toUpperCase()]) + "-" + pad(m[1]);
+    if ((m = /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/.exec(s))) return m[3] + "-" + pad(m[2]) + "-" + pad(m[1]);
+    if ((m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s))) return m[1] + "-" + m[2] + "-" + m[3];
+    return "";
+  }
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function csvRows(text) {
+    var rows = [], row = [], cell = "", q = false, i, c;
+    text = text.replace(/^﻿/, "");
+    for (i = 0; i < text.length; i++) {
+      c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cell); cell = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(cell); rows.push(row); row = []; cell = "";
+      } else cell += c;
+    }
+    if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return x.trim(); }); });
+  }
+  function headerKey(h) {
+    h = h.toLowerCase().replace(/[^a-z]/g, "");
+    if (h === "date") return "date";
+    if (h === "symbol") return "symbol";
+    if (h.indexOf("security") >= 0 || h.indexOf("scrip") >= 0) return "security_name";
+    if (h.indexOf("client") >= 0) return "client_name";
+    if (h.indexOf("buy") >= 0 && h.indexOf("sell") >= 0) return "side";
+    if (h.indexOf("quantity") >= 0 || h.indexOf("qty") === 0) return "quantity";
+    if (h.indexOf("price") >= 0) return "price";
+    if (h.indexOf("remark") >= 0) return "remarks";
+    return null;
+  }
+  function makeDeal(r, kind) {
+    var d = {
+      date: isoDate(r.date), symbol: clean(r.symbol).toUpperCase(), security_name: clean(r.security_name),
+      client_name: clean(r.client_name), side: side(r.side), quantity: Math.round(num(r.quantity)),
+      price: num(r.price), remarks: clean(r.remarks), kind: r.kind || kind
+    };
+    if (!d.side && d.kind === "short") d.side = "SELL";
+    if (!d.date || !d.symbol || !d.side) return null;
+    d.value = d.quantity * d.price;
+    return d;
+  }
+  function parseCSV(text, kind) {
+    var rows = csvRows(text);
+    if (!rows.length) return [];
+    var keys = rows[0].map(headerKey);
+    if (keys.indexOf("symbol") < 0 || keys.indexOf("side") < 0) throw new Error("This CSV doesn't look like an NSE bulk/block deals file.");
+    return rows.slice(1).map(function (raw) {
+      var r = {};
+      keys.forEach(function (k, i) { if (k) r[k] = raw[i]; });
+      return makeDeal(r, kind);
+    }).filter(Boolean);
+  }
+  var JSON_FIELDS = { DT_DATE: "date", SYMBOL: "symbol", SCRIP_NAME: "security_name", CLIENT_NAME: "client_name",
+    BUY_SELL: "side", QTY_TRD: "quantity", TP_WATP: "price", REMARKS: "remarks" };
+  function parseJSON(obj, kind) {
+    if (obj && !Array.isArray(obj) && obj.kind) kind = obj.kind;
+    var list = Array.isArray(obj) ? obj : (obj.deals || obj.data || []);
+    return list.map(function (item) {
+      if ("symbol" in item) return makeDeal(item, kind); // nse-deals JSON
+      var r = {};
+      Object.keys(item).forEach(function (k) {
+        var f = JSON_FIELDS[k.indexOf("_") >= 0 ? k.slice(k.indexOf("_") + 1) : k];
+        if (f && !(f in r)) r[f] = item[k];
+      });
+      return makeDeal(r, kind);
+    }).filter(Boolean);
+  }
+  function parseAny(text, name) {
+    var kind = /block/i.test(name || "") ? "block" : /short/i.test(name || "") ? "short" : "bulk";
+    var t = text.replace(/^﻿/, "").trim();
+    return (t[0] === "{" || t[0] === "[") ? parseJSON(JSON.parse(t), kind) : parseCSV(t, kind);
+  }
+
+  // ---------- analytics ----------
+  function markRoundTrips(deals) {
+    var g = {};
+    deals.forEach(function (d) {
+      var k = d.date + "|" + d.client_name + "|" + d.symbol;
+      (g[k] = g[k] || { BUY: 0, SELL: 0 })[d.side]++;
+    });
+    deals.forEach(function (d) {
+      var x = g[d.date + "|" + d.client_name + "|" + d.symbol];
+      d.roundTrip = x.BUY > 0 && x.SELL > 0;
+    });
+  }
+  function netBySymbol(deals) {
+    var acc = {};
+    deals.forEach(function (d) {
+      var p = acc[d.symbol] = acc[d.symbol] || { symbol: d.symbol, deals: 0, qty: 0, value: 0 };
+      var sgn = d.side === "BUY" ? 1 : -1;
+      p.deals++; p.qty += sgn * d.quantity; p.value += sgn * d.value;
+    });
+    return Object.keys(acc).map(function (k) { return acc[k]; })
+      .sort(function (a, b) { return Math.abs(b.value) - Math.abs(a.value) || a.symbol.localeCompare(b.symbol); });
+  }
+
+  // ---------- formatting ----------
+  var fmtInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+  var fmt2 = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function cr(v) { return fmt2.format(v / 1e7); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function dispDate(iso) {
+    var p = iso.split("-"), m = Object.keys(MONTHS)[+p[1] - 1];
+    return p[2] + "-" + m.charAt(0) + m.slice(1).toLowerCase() + "-" + p[0];
+  }
+  function sideTag(s) { return '<span class="side ' + s + '">' + s + "</span>"; }
+  function symCell(s) { return '<span class="sym" data-sym="' + esc(s) + '" title="Filter to ' + esc(s) + '">' + esc(s) + "</span>"; }
+
+  // ---------- render ----------
+  function filtered() {
+    var q = state.q.toLowerCase(), min = state.minCr * 1e7;
+    return state.deals.filter(function (d) {
+      if (state.side && d.side !== state.side) return false;
+      if (d.value < min) return false;
+      if (q && (d.symbol + " " + d.security_name + " " + d.client_name).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  function render() {
+    var rows = filtered(), buy = 0, sell = 0;
+    rows.forEach(function (d) { if (d.side === "BUY") buy += d.value; else sell += d.value; });
+    $("sCount").textContent = fmtInt.format(rows.length);
+    $("sTotal").textContent = cr(buy + sell);
+    $("sBuy").textContent = cr(buy);
+    $("sSell").textContent = cr(sell);
+    $("shown").textContent = rows.length === state.deals.length ? "" : "(" + rows.length + " of " + state.deals.length + ")";
+
+    var net = netBySymbol(rows).slice(0, 10);
+    $("netBody").innerHTML = net.length ? net.map(function (p) {
+      var cls = p.value > 0 ? "pos" : p.value < 0 ? "neg" : "";
+      return "<tr><td>" + symCell(p.symbol) + '</td><td class="num">' + p.deals + '</td><td class="num ' + cls + '">' +
+        fmtInt.format(p.qty) + '</td><td class="num ' + cls + '">' + cr(p.value) + "</td></tr>";
+    }).join("") : '<tr><td colspan="4" class="empty">No deals</td></tr>';
+
+    var top = rows.slice().sort(function (a, b) { return b.value - a.value; }).slice(0, 10);
+    $("topBody").innerHTML = top.length ? top.map(function (d) {
+      return "<tr><td>" + symCell(d.symbol) + '</td><td class="client">' + esc(d.client_name) + "</td><td>" +
+        sideTag(d.side) + '</td><td class="num">' + cr(d.value) + "</td></tr>";
+    }).join("") : '<tr><td colspan="4" class="empty">No deals</td></tr>';
+
+    var k = state.sortKey, dir = state.sortDir;
+    rows.sort(function (a, b) {
+      var x = a[k], y = b[k];
+      return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * dir || b.value - a.value;
+    });
+    $("mainBody").innerHTML = rows.length ? rows.map(function (d) {
+      var rt = d.roundTrip ? '<span class="flag" title="Same client bought and sold this symbol on the same day">RT</span>' : "";
+      var rem = d.remarks ? ' title="' + esc(d.remarks) + '"' : "";
+      return "<tr><td>" + dispDate(d.date) + "</td><td" + (d.security_name ? ' title="' + esc(d.security_name) + '"' : "") + ">" +
+        symCell(d.symbol) + '</td><td class="client"' + rem + ">" + esc(d.client_name) + rt + "</td><td>" + sideTag(d.side) +
+        '</td><td class="num">' + fmtInt.format(d.quantity) + '</td><td class="num">' + fmt2.format(d.price) +
+        '</td><td class="num">' + cr(d.value) + '</td><td class="hide-sm">' + d.kind + "</td></tr>";
+    }).join("") : '<tr><td colspan="8" class="empty">No deals match these filters</td></tr>';
+
+    Array.prototype.forEach.call(document.querySelectorAll("#mainHead th"), function (th) {
+      var a = th.querySelector(".arrow"); if (a) a.remove();
+      th.removeAttribute("aria-sort");
+      if (th.dataset.key === k) {
+        th.insertAdjacentHTML("beforeend", ' <span class="arrow">' + (dir > 0 ? "▲" : "▼") + "</span>");
+        th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending");
+      }
+    });
+  }
+  function load(deals, label) {
+    if (!deals.length) { status("No deals found in " + label + ".", true); return; }
+    markRoundTrips(deals);
+    state.deals = deals;
+    $("results").classList.remove("hidden");
+    var dates = deals.map(function (d) { return d.date; }).sort();
+    status("Loaded " + deals.length + " deals from " + label + " (" + dispDate(dates[0]) +
+      (dates[0] !== dates[dates.length - 1] ? " to " + dispDate(dates[dates.length - 1]) : "") + ").");
+    render();
+  }
+  function status(msg, err) { var s = $("status"); s.textContent = msg; s.className = "status" + (err ? " err" : ""); }
+
+  // ---------- inputs ----------
+  function readFile(f) {
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try { load(parseAny(String(r.result), f.name), f.name); } catch (e) { status("Could not read " + f.name + ": " + e.message, true); }
+    };
+    r.onerror = function () { status("Could not read " + f.name, true); };
+    r.readAsText(f);
+  }
+  $("file").addEventListener("change", function (e) { readFile(e.target.files[0]); e.target.value = ""; });
+  var drop = $("drop");
+  ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { readFile(e.dataTransfer.files[0]); });
+
+  function fetchUrl(u) {
+    if (!u) return;
+    status("Fetching…");
+    fetch(u, { headers: { Accept: "application/json, text/csv" } }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    }).then(function (t) { load(parseAny(t, u), u); }).catch(function (e) {
+      status("Fetch failed (" + e.message + "). The URL must allow CORS; NSE itself does not, so serve data from your own site.", true);
+    });
+  }
+  $("fetchBtn").addEventListener("click", function () { fetchUrl($("url").value.trim()); });
+  $("url").addEventListener("keydown", function (e) { if (e.key === "Enter") fetchUrl($("url").value.trim()); });
+
+  // Embed support: index.html?src=/data/bulk.json loads automatically.
+  var src = new URLSearchParams(location.search).get("src");
+  if (src) { $("url").value = src; fetchUrl(src); }
+
+  $("demoBtn").addEventListener("click", function () {
+    // Synthetic sample (fictional companies and clients) for trying the viewer.
+    var demo = "Date,Symbol,Security Name,Client Name,Buy/Sell,Quantity Traded,Trade Price / Wght. Avg. Price,Remarks\n" +
+      '06-NOV-2026,ACMEIND,Acme Industries Limited,ALPHA GROWTH FUND LLP,BUY,"12,50,000",412.35,-\n' +
+      '06-NOV-2026,ACMEIND,Acme Industries Limited,BETA CAPITAL MARKETS PVT LTD,SELL,"12,50,000",412.40,-\n' +
+      '06-NOV-2026,BHARATTEX,Bharat Textiles Ltd,QUANTEDGE TRADING LLP,BUY,"3,10,500",88.20,-\n' +
+      '06-NOV-2026,BHARATTEX,Bharat Textiles Ltd,QUANTEDGE TRADING LLP,SELL,"3,08,000",88.45,-\n' +
+      '06-NOV-2026,CHANDRAPWR,Chandra Power Systems Limited,SUNRISE INDIA OPPORTUNITIES FUND,BUY,"5,00,000","1,245.60",-\n' +
+      '06-NOV-2026,CHANDRAPWR,Chandra Power Systems Limited,GOLDEN PEAK SECURITIES,SELL,"1,20,000","1,248.00",Weighted Avg Price\n' +
+      '06-NOV-2026,DEVAPHARMA,Deva Pharma Ltd,RAJESH KUMAR SHAH,SELL,"2,75,000",56.10,-\n' +
+      '06-NOV-2026,DEVAPHARMA,Deva Pharma Ltd,NEELKANTH INVESTMENTS,BUY,"2,75,000",56.10,-\n';
+    load(parseCSV(demo, "bulk"), "demo data (synthetic)");
+  });
+
+  // ---------- filters & sorting ----------
+  $("q").addEventListener("input", function (e) { state.q = e.target.value.trim(); render(); });
+  $("minCr").addEventListener("input", function (e) { state.minCr = parseFloat(e.target.value) || 0; render(); });
+  Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (c) {
+    c.addEventListener("click", function () {
+      state.side = c.dataset.side;
+      Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (o) { o.setAttribute("aria-pressed", String(o === c)); });
+      render();
+    });
+  });
+  $("resetBtn").addEventListener("click", function () {
+    state.q = ""; state.side = ""; state.minCr = 0; $("q").value = ""; $("minCr").value = "0";
+    Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (o) { o.setAttribute("aria-pressed", String(o.dataset.side === "")); });
+    render();
+  });
+  $("mainHead").addEventListener("click", function (e) {
+    var th = e.target.closest("th[data-key]"); if (!th) return;
+    var k = th.dataset.key;
+    if (state.sortKey === k) state.sortDir = -state.sortDir;
+    else { state.sortKey = k; state.sortDir = (k === "symbol" || k === "client_name" || k === "side" || k === "kind") ? 1 : -1; }
+    render();
+  });
+  document.addEventListener("click", function (e) {
+    var s = e.target.closest(".sym"); if (!s) return;
+    state.q = s.dataset.sym; $("q").value = state.q; render();
+  });
+})();
+</script>
+</body>
+</html>
